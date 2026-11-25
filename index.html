@@ -307,7 +307,7 @@ body{background:var(--hero) no-repeat,var(--bg)}
     </div>
     <p class="foot">Data is stored on this device only. Export a backup to iCloud Drive every week.</p>
     <input type="file" id="s-file" accept="application/json,.json" hidden>
-    <p class="foot" style="text-align:center;margin-top:24px">Cut · v1.2</p>
+    <p class="foot" style="text-align:center;margin-top:24px">Cut · v1.3</p>
   </section>
 </main>
 
@@ -571,12 +571,13 @@ function resize(file,max,cb){
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition,rec=null,recBtn=null;
 function toggleRec(target,btn){
   if(rec){stopRec();return}
-  if(!SR){target.focus();toast("Use the 🎤 on your keyboard to dictate");return}
+  var standalone=navigator.standalone||(window.matchMedia&&matchMedia("(display-mode: standalone)").matches);
+  if(!SR||standalone){target.focus();toast("Tap 🎤 on your keyboard to dictate");return}
   try{
     rec=new SR();rec.lang="en-CA";rec.interimResults=true;rec.continuous=true;
     var base=target.value?target.value.trim()+" ":"";
     rec.onresult=function(ev){var s="";for(var i=0;i<ev.results.length;i++)s+=ev.results[i][0].transcript;target.value=base+s};
-    rec.onerror=function(){stopRec();target.focus();toast("Mic unavailable — use the keyboard 🎤")};
+    rec.onerror=function(){stopRec();target.focus();toast("Tap 🎤 on your keyboard to dictate")};
     rec.onend=function(){stopRec()};
     rec.start();recBtn=btn;btn.classList.add("rec");
   }catch(e){rec=null;target.focus();toast("Use the 🎤 on your keyboard to dictate")}
@@ -608,10 +609,12 @@ function claude(model,system,messages,maxTok){
   .then(function(j){
     var u=j.usage||{},pr=PRICE[model]||[2,10],usd=((u.input_tokens||0)*pr[0]+(u.output_tokens||0)*pr[1])/1e6,m=todayKey().slice(0,7);
     S.cost[m]=(S.cost[m]||0)+usd;save();
-    return(j.content||[]).filter(function(c){return c.type==="text"}).map(function(c){return c.text}).join("");
+    var txt=(j.content||[]).filter(function(c){return c.type==="text"}).map(function(c){return c.text}).join("");
+    if(!txt.trim())throw new Error(j.stop_reason==="max_tokens"?"Claude ran out of room before answering. Tap Estimate to try again.":"Claude sent an empty reply. Tap Estimate to try again.");
+    return txt;
   });
 }
-function parseJSON(s){var a=s.indexOf("{"),b=s.lastIndexOf("}");if(a<0||b<a)throw new Error("Unexpected reply");return JSON.parse(s.slice(a,b+1))}
+function parseJSON(s){var a=s.indexOf("{"),b=s.lastIndexOf("}");if(a<0||b<a)throw new Error("Claude didn't return a food list. Add a bit more detail and tap Estimate again.");try{return JSON.parse(s.slice(a,b+1))}catch(e){throw new Error("Claude's reply was incomplete. Tap Estimate to try again.")}}
 function runPhoto(){
   if(!photo)return;var note=$("lg-note").value.trim();
   var content=[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:photo.split(",")[1]}},{type:"text",text:ctxText()+"\n\nEstimate what I ate in this photo."+(note?" My notes: "+note:"")}];
@@ -623,7 +626,7 @@ function runText(){
 }
 function estimate(model,content,src){
   var out=$("lg-out"),go=$("lg-go");go.disabled=true;out.innerHTML='<div class="spin"></div>';
-  claude(model,FOOD_SYS(),[{role:"user",content:content}],1000).then(function(txt){
+  claude(model,FOOD_SYS(),[{role:"user",content:content}],4000).then(function(txt){
     var j=parseJSON(txt);showResults(j.items||[],j.note,src);
   }).catch(function(e){out.innerHTML='<div class="err">'+esc(e.message)+'</div>';go.disabled=false});
 }
@@ -668,7 +671,7 @@ function sendCoach(){
   S.chat.push({role:"user",text:t});S.chat.push({role:"wait"});renderCoach();window.scrollTo(0,document.body.scrollHeight);
   var hist=S.chat.filter(function(m){return m.role==="user"||m.role==="ai"}).slice(-12).map(function(m){return{role:m.role==="user"?"user":"assistant",content:m.role==="user"?m.text:JSON.stringify({reply:m.text,log:m.log||[]})}});
   hist[hist.length-1].content="My log right now:\n"+ctxText()+"\n\n"+hist[hist.length-1].content;
-  claude(S.settings.mt,COACH_SYS(),hist,900).then(function(txt){
+  claude(S.settings.mt,COACH_SYS(),hist,4000).then(function(txt){
     var j;try{j=parseJSON(txt)}catch(e){j={reply:txt,log:[]}}
     S.chat.pop();S.chat.push({role:"ai",text:j.reply||"",log:j.log||[]});
   }).catch(function(e){S.chat.pop();S.chat.push({role:"ai",text:e.message,err:true})})
@@ -774,7 +777,7 @@ $("s-mv").onchange=function(){S.settings.mv=this.value;save()};
 $("s-mt").onchange=function(){S.settings.mt=this.value;save()};
 $("s-test").onclick=function(){
   S.settings.key=$("s-key").value.trim();save();$("s-testv").textContent="Testing…";
-  claude(S.settings.mt,"Reply with the single word OK.",[{role:"user",content:"Test"}],10).then(function(){$("s-testv").textContent="✓ Works";$("s-testv").style.color="var(--accent)";renderSettings()}).catch(function(e){$("s-testv").textContent=e.message.slice(0,40);$("s-testv").style.color="var(--red)"});
+  claude(S.settings.mt,"Reply with the single word OK.",[{role:"user",content:"Test"}],1000).then(function(){$("s-testv").textContent="✓ Works";$("s-testv").style.color="var(--accent)";renderSettings()}).catch(function(e){$("s-testv").textContent=e.message.slice(0,40);$("s-testv").style.color="var(--red)"});
 };
 function editPreset(id){
   var p=id?S.presets.filter(function(x){return x.id===id})[0]:{id:uid(),name:"",kcal:"",p:""};
