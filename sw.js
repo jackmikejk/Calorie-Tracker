@@ -1,5 +1,5 @@
 // Cut — offline support: network first, fall back to the last cached copy.
-const C = "cut-v1.3";
+const C = "cut-v2.0";
 self.addEventListener("install", e => { self.skipWaiting(); e.waitUntil(caches.open(C).then(c => c.addAll(["./", "index.html", "apple-touch-icon.png"]).catch(() => {}))); });
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", e => {
